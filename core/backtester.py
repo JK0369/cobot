@@ -39,7 +39,7 @@ class Backtester:
                 symbol=symbol,
                 historical=self.loader,
                 live=None,
-                timeframes=["5m", "15m", "1h", "4h", "1d"],
+                timeframes=["5m", "15m"],
                 window=limit or 1000000,
             )
             available = {tf: arr for tf, arr in tf_series.items() if arr}

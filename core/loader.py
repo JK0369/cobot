@@ -209,7 +209,7 @@ def get_multi_timeframe_candles(
     - 없는 타임프레임은 가장 작은(초 단위) 가용 타임프레임에서 리샘플링하여 보완
     """
     if timeframes is None:
-        timeframes = ["5m", "15m", "1h", "4h", "1d"]
+        timeframes = ["5m", "15m"]
     if historical is None:
         historical = HistoricalLoader()
     if live is None:
