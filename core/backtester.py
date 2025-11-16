@@ -21,7 +21,7 @@ import os
 from typing import Dict, List, Optional, Any
 from .calculator import Calculator
 from .position import decide_action
-from .loader import HistoricalLoader, resample_candles
+from .loader import HistoricalLoader, get_multi_timeframe_candles, TIMEFRAME_TO_SECONDS
 
 class Backtester:
     def __init__(self, settings_path: str = "config/settings.json", methods_path: str = "methods", historical_dir: str = "data/historical"):
@@ -34,26 +34,35 @@ class Backtester:
         equity_curve: List[float] = []
 
         for symbol in symbols:
-            candles = self.loader.load(symbol, limit=limit)
-            if not candles:
+            # 심볼별 멀티 타임프레임 데이터 로딩 (백테스트는 historical만 사용)
+            tf_series = get_multi_timeframe_candles(
+                symbol=symbol,
+                historical=self.loader,
+                live=None,
+                timeframes=["5m", "15m", "1h", "4h", "1d"],
+                window=limit or 1000000,
+            )
+            available = {tf: arr for tf, arr in tf_series.items() if arr}
+            if not available:
                 continue
+            driving_tf = min(available.keys(), key=lambda t: TIMEFRAME_TO_SECONDS.get(t, 10**12))
+            driving = sorted(available[driving_tf], key=lambda x: x["timestamp"])  # oldest->newest
+
             position_open = False
             entry_price: Optional[float] = None
             entry_time: Optional[int] = None
 
-            for idx in range(len(candles)):
-                # 5분봉을 기준으로 현재 시점까지의 윈도우 생성
-                window_5m = candles[: idx + 1]
-                latest = window_5m[-1]
-                # 윈도우 기반으로 상위 타임프레임 리샘플링 (미래 데이터 참조 금지)
-                tf_candles = {
-                    "5m": window_5m,
-                    "15m": resample_candles(window_5m, "15m"),
-                    "1h": resample_candles(window_5m, "1h"),
-                    "4h": resample_candles(window_5m, "4h"),
-                    "1d": resample_candles(window_5m, "1d"),
-                }
-                score = self.calc.compute_symbol_multiTF(symbol, tf_candles)
+            for idx in range(len(driving)):
+                current_ts = int(driving[idx]["timestamp"])
+                # 각 타임프레임별 현재 시점까지의 윈도우 구성 (미래 데이터 금지)
+                tf_windows: Dict[str, List[Dict]] = {}
+                for tf, arr in available.items():
+                    # 정렬 보장 후 현재 ts 이하만 포함
+                    arr_sorted = sorted(arr, key=lambda x: x["timestamp"])  # 안전하게 정렬
+                    window_arr = [c for c in arr_sorted if int(c["timestamp"]) <= current_ts]
+                    tf_windows[tf] = window_arr
+                latest = driving[idx]
+                score = self.calc.compute_symbol_multiTF(symbol, tf_windows)
                 current_price = latest["close"]
                 action = decide_action(score, position_open, entry_price, current_price)
 
@@ -85,9 +94,10 @@ class Backtester:
 
             # 마지막 캔들에서 미청산 포지션 강제 청산 (옵션)
             if position_open and entry_price is not None:
-                last_price = candles[-1]["close"]
+                last_bar = driving[-1]
+                last_price = last_bar["close"]
                 pnl = last_price - entry_price
-                hold_minutes = int((candles[-1]["timestamp"] - (entry_time or candles[-1]["timestamp"])) / 60)
+                hold_minutes = int((int(last_bar["timestamp"]) - (entry_time or int(last_bar["timestamp"])) ) / 60)
                 trades.append({
                     "symbol": symbol,
                     "entry_price": entry_price,

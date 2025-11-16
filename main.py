@@ -24,13 +24,12 @@ positions = {
 }
 
 def get_tf_candles(symbol: str, historical: HistoricalLoader, live: LiveLoader, window: int = 300):
-    # 5m 기준으로 수집 후 15m/1h/4h/1d 리샘플링
+    # 타임프레임별 실제 데이터가 있으면 직접 사용, 없으면 가장 작은 TF에서 리샘플
     return get_multi_timeframe_candles(
         symbol=symbol,
         historical=historical,
         live=live,
         timeframes=["5m", "15m", "1h", "4h", "1d"],
-        base_timeframe="5m",
         window=window,
     )
 

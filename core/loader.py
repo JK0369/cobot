@@ -50,6 +50,39 @@ class HistoricalLoader:
             candles = candles[-limit:]
         return candles
 
+    def load_tf(self, symbol: str, timeframe: str, limit: Optional[int] = None) -> List[Dict]:
+        """타임프레임별 CSV 로딩. 우선순위 경로:
+        1) data/historical/<timeframe>/<SYMBOL>.csv
+        2) data/historical/<SYMBOL>_<timeframe>.csv
+        3) data/historical/<SYMBOL>.csv (마지막 폴백)
+        """
+        # 1) 서브폴더 방식
+        path1 = os.path.join(self.directory, timeframe, f"{symbol}.csv")
+        # 2) 파일명 접미사 방식
+        path2 = os.path.join(self.directory, f"{symbol}_{timeframe}.csv")
+        # 3) 기본 파일명(폴백)
+        path3 = os.path.join(self.directory, f"{symbol}.csv")
+
+        for path in [path1, path2, path3]:
+            if os.path.exists(path):
+                candles: List[Dict] = []
+                with open(path, "r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        candles.append({
+                            "timestamp": int(row["timestamp"]),
+                            "open": float(row["open"]),
+                            "high": float(row["high"]),
+                            "low": float(row["low"]),
+                            "close": float(row["close"]),
+                            "volume": float(row["volume"]),
+                        })
+                if limit is not None:
+                    candles = candles[-limit:]
+                return candles
+        # 아무 것도 없으면 빈 리스트
+        return []
+
 class LiveLoader:
     """Stub for live data integration.
 
@@ -78,6 +111,32 @@ class LiveLoader:
                     "volume": float(row["volume"]),
                 })
         return candles[-limit:]
+
+    def get_latest_tf(self, symbol: str, timeframe: str, limit: int = 100) -> List[Dict]:
+        """타임프레임별 최신 스냅샷 로딩. 우선순위 경로:
+        1) data/live/<timeframe>/<SYMBOL>_<timeframe>_latest.csv
+        2) data/live/<SYMBOL>_<timeframe>_latest.csv
+        3) data/live/<SYMBOL>_latest.csv (폴백)
+        """
+        path1 = os.path.join(self.directory, timeframe, f"{symbol}_{timeframe}_latest.csv")
+        path2 = os.path.join(self.directory, f"{symbol}_{timeframe}_latest.csv")
+        path3 = os.path.join(self.directory, f"{symbol}_latest.csv")
+        for path in [path1, path2, path3]:
+            if os.path.exists(path):
+                candles: List[Dict] = []
+                with open(path, "r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        candles.append({
+                            "timestamp": int(row["timestamp"]),
+                            "open": float(row["open"]),
+                            "high": float(row["high"]),
+                            "low": float(row["low"]),
+                            "close": float(row["close"]),
+                            "volume": float(row["volume"]),
+                        })
+                return candles[-limit:]
+        return []
 
 
 def _bucket_start(ts: int, interval: int) -> int:
@@ -142,38 +201,43 @@ def get_multi_timeframe_candles(
     historical: Optional[HistoricalLoader] = None,
     live: Optional[LiveLoader] = None,
     timeframes: Optional[List[str]] = None,
-    base_timeframe: str = "5m",
     window: int = 300,
 ) -> Dict[str, List[Dict]]:
     """여러 타임프레임 캔들을 반환.
 
-    - 우선 live 로드 시도, 부족하면 historical 대체
-    - base_timeframe(기본 5m) 시계열을 기반으로 상위 타임프레임은 리샘플링
+    - 각 타임프레임별로 실시간 스냅샷 → 과거 CSV 순으로 직접 로드 시도
+    - 없는 타임프레임은 가장 작은(초 단위) 가용 타임프레임에서 리샘플링하여 보완
     """
     if timeframes is None:
         timeframes = ["5m", "15m", "1h", "4h", "1d"]
-    if base_timeframe not in TIMEFRAME_TO_SECONDS:
-        raise ValueError("base_timeframe must be one of: " + ", ".join(TIMEFRAME_TO_SECONDS))
     if historical is None:
         historical = HistoricalLoader()
     if live is None:
         live = LiveLoader()
 
-    # base 시계열 확보
-    live_c = live.get_latest(symbol, limit=window)
-    if len(live_c) < 10:
-        base = historical.load(symbol, limit=window)
-    else:
-        base = live_c
-
-    result: Dict[str, List[Dict]] = {}
-    result[base_timeframe] = base
+    # 직접 로딩 시도
+    tf_data: Dict[str, List[Dict]] = {}
     for tf in timeframes:
-        if tf == base_timeframe:
+        data_tf = live.get_latest_tf(symbol, tf, limit=window)
+        if len(data_tf) < 10:
+            data_tf = historical.load_tf(symbol, tf, limit=window)
+        tf_data[tf] = data_tf
+
+    # 최소 1개라도 데이터가 있어야 함. 없으면 빈 dict 반환
+    available = {tf: c for tf, c in tf_data.items() if c}
+    if not available:
+        return tf_data
+
+    # 가장 작은(가장 촘촘한) 타임프레임을 찾음
+    smallest_tf = min(available.keys(), key=lambda t: TIMEFRAME_TO_SECONDS.get(t, 10**12))
+    base = available[smallest_tf]
+
+    # 누락된 타임프레임은 base에서 리샘플링
+    for tf in timeframes:
+        if tf_data.get(tf):
             continue
-        # base로부터 리샘플
-        result[tf] = resample_candles(base, tf)
-    return result
+        tf_data[tf] = resample_candles(base, tf)
+    return tf_data
 
 __all__ = [
     "HistoricalLoader",
