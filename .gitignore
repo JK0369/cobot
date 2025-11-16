@@ -1,0 +1,23 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+.build/
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Generated data snapshots (optional)
+data/live/*_latest.csv

@@ -1,0 +1,4 @@
+[
+  { "method": "volume_spike", "weight": 0.5 },
+  { "method": "rsi_oversold", "weight": 0.7 }
+]
