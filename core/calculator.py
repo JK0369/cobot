@@ -33,7 +33,9 @@ class Calculator:
         self.methods_path = methods_path
         self.method_weights: Dict[str, float] = {}
         self.method_funcs: Dict[str, Callable] = {}
+        self.tf_weights: Dict[str, float] = {}
         self._load_settings()
+        self._load_timeframe_weights()
         self._discover_methods()
 
     def _load_settings(self) -> None:
@@ -98,8 +100,8 @@ class Calculator:
 
     def compute_symbol_multiTF(self, symbol: str, tf_candles: Dict[str, List[Dict]]) -> float:
         """여러 타임프레임 캔들을 이용하여 각 메서드를 타임프레임별로 실행한 뒤
-        타임프레임 평균(동일 가중)으로 메서드 점수를 만들고, 이후 메서드 가중치로
-        합산하여 최종 점수를 계산.
+        타임프레임 가중 평균(기본: 15m 가중치 우대)으로 메서드 점수를 만들고,
+        이후 메서드 가중치로 합산하여 최종 점수를 계산.
 
         tf_candles 예:
         {
@@ -119,21 +121,20 @@ class Calculator:
             weight = self.method_weights.get(name, 0)
             if weight <= 0:
                 continue
-            # 타임프레임별 점수 산출 후 평균
-            per_tf_scores: List[float] = []
+            # 타임프레임별 점수 산출 후 가중 평균
+            tf_num = 0.0
+            tf_den = 0.0
             for tf, candles in tf_candles.items():
                 if not candles:
                     continue
                 try:
                     s = float(fn(symbol, candles))
-                    per_tf_scores.append(s)
                 except Exception:
-                    # 해당 타임프레임 실패 시 무시
-                    pass
-            if per_tf_scores:
-                method_score = sum(per_tf_scores) / len(per_tf_scores)
-            else:
-                method_score = 0.0
+                    continue
+                w_tf = float(self.tf_weights.get(tf, 1.0))
+                tf_num += s * w_tf
+                tf_den += w_tf
+            method_score = (tf_num / tf_den) if tf_den > 0 else 0.0
             method_weighted_sum += method_score * weight
         combined = method_weighted_sum / total_weight
         if combined > 1:
@@ -141,5 +142,28 @@ class Calculator:
         if combined < -1:
             combined = -1.0
         return round(combined, 4)
+
+    def _load_timeframe_weights(self) -> None:
+        """타임프레임 가중치 로드. 기본값: 5m=1.0, 15m=1.5
+        settings.json과 같은 폴더의 timeframes.json이 있으면 사용.
+        예:
+        {
+          "5m": 1.0,
+          "15m": 1.5
+        }
+        """
+        default = {"5m": 1.0, "15m": 1.5}
+        try:
+            base_dir = os.path.dirname(self.settings_path)
+            tf_path = os.path.join(base_dir, "timeframes.json")
+            if os.path.exists(tf_path):
+                with open(tf_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                # 필터: 숫자값만 반영
+                self.tf_weights = {str(k): float(v) for k, v in data.items()}
+            else:
+                self.tf_weights = default
+        except Exception:
+            self.tf_weights = default
 
 __all__ = ["Calculator"]
