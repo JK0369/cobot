@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Dict, List
 from core.calculator import Calculator
-from core.loader import HistoricalLoader, LiveLoader
+from core.loader import HistoricalLoader, LiveLoader, get_multi_timeframe_candles
 from core.position import build_output
 
 SYMBOLS = ["BTC", "ETH"]
@@ -23,11 +23,16 @@ positions = {
     "ETH": {"has_position": True, "entry_price": 3100.0},
 }
 
-def get_candles(symbol: str, historical: HistoricalLoader, live: LiveLoader, window: int = 100):
-    live_candles = live.get_latest(symbol, limit=window)
-    if len(live_candles) < 10:  # 실시간 데이터 부족 시 historical 대체
-        return historical.load(symbol, limit=window)
-    return live_candles
+def get_tf_candles(symbol: str, historical: HistoricalLoader, live: LiveLoader, window: int = 300):
+    # 5m 기준으로 수집 후 15m/1h/4h/1d 리샘플링
+    return get_multi_timeframe_candles(
+        symbol=symbol,
+        historical=historical,
+        live=live,
+        timeframes=["5m", "15m", "1h", "4h", "1d"],
+        base_timeframe="5m",
+        window=window,
+    )
 
 def run_once() -> Dict:
     calc = Calculator("config/settings.json", "methods")
@@ -35,11 +40,12 @@ def run_once() -> Dict:
     live = LiveLoader()
     result: Dict = {}
     for symbol in SYMBOLS:
-        candles = get_candles(symbol, historical, live, window=120)
-        if not candles:
+        tf_candles = get_tf_candles(symbol, historical, live, window=360)  # 5m 기준 360개 ≈ 30시간
+        base_5m = tf_candles.get("5m", [])
+        if not base_5m:
             continue
-        score = calc.compute_symbol(symbol, candles)
-        current_price = candles[-1]["close"]
+        score = calc.compute_symbol_multiTF(symbol, tf_candles)
+        current_price = base_5m[-1]["close"]
         p_state = positions.get(symbol, {"has_position": False, "entry_price": None})
         out = build_output(symbol, score, p_state["has_position"], p_state["entry_price"], current_price)
         result.update(out)

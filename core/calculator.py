@@ -96,4 +96,50 @@ class Calculator:
     def compute_all(self, symbol_candles: Dict[str, List[Dict]]) -> Dict[str, float]:
         return {sym: self.compute_symbol(sym, cnds) for sym, cnds in symbol_candles.items()}
 
+    def compute_symbol_multiTF(self, symbol: str, tf_candles: Dict[str, List[Dict]]) -> float:
+        """여러 타임프레임 캔들을 이용하여 각 메서드를 타임프레임별로 실행한 뒤
+        타임프레임 평균(동일 가중)으로 메서드 점수를 만들고, 이후 메서드 가중치로
+        합산하여 최종 점수를 계산.
+
+        tf_candles 예:
+        {
+            "5m": [...],
+            "15m": [...],
+            "1h": [...],
+            ...
+        }
+        """
+        if not self.method_funcs:
+            return 0.0
+        total_weight = sum(w for w in self.method_weights.values() if w > 0)
+        if total_weight <= 0:
+            return 0.0
+        method_weighted_sum = 0.0
+        for name, fn in self.method_funcs.items():
+            weight = self.method_weights.get(name, 0)
+            if weight <= 0:
+                continue
+            # 타임프레임별 점수 산출 후 평균
+            per_tf_scores: List[float] = []
+            for tf, candles in tf_candles.items():
+                if not candles:
+                    continue
+                try:
+                    s = float(fn(symbol, candles))
+                    per_tf_scores.append(s)
+                except Exception:
+                    # 해당 타임프레임 실패 시 무시
+                    pass
+            if per_tf_scores:
+                method_score = sum(per_tf_scores) / len(per_tf_scores)
+            else:
+                method_score = 0.0
+            method_weighted_sum += method_score * weight
+        combined = method_weighted_sum / total_weight
+        if combined > 1:
+            combined = 1.0
+        if combined < -1:
+            combined = -1.0
+        return round(combined, 4)
+
 __all__ = ["Calculator"]

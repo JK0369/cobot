@@ -21,7 +21,7 @@ import os
 from typing import Dict, List, Optional, Any
 from .calculator import Calculator
 from .position import decide_action
-from .loader import HistoricalLoader
+from .loader import HistoricalLoader, resample_candles
 
 class Backtester:
     def __init__(self, settings_path: str = "config/settings.json", methods_path: str = "methods", historical_dir: str = "data/historical"):
@@ -42,9 +42,18 @@ class Backtester:
             entry_time: Optional[int] = None
 
             for idx in range(len(candles)):
-                window = candles[: idx + 1]
-                latest = window[-1]
-                score = self.calc.compute_symbol(symbol, window)
+                # 5분봉을 기준으로 현재 시점까지의 윈도우 생성
+                window_5m = candles[: idx + 1]
+                latest = window_5m[-1]
+                # 윈도우 기반으로 상위 타임프레임 리샘플링 (미래 데이터 참조 금지)
+                tf_candles = {
+                    "5m": window_5m,
+                    "15m": resample_candles(window_5m, "15m"),
+                    "1h": resample_candles(window_5m, "1h"),
+                    "4h": resample_candles(window_5m, "4h"),
+                    "1d": resample_candles(window_5m, "1d"),
+                }
+                score = self.calc.compute_symbol_multiTF(symbol, tf_candles)
                 current_price = latest["close"]
                 action = decide_action(score, position_open, entry_price, current_price)
 
