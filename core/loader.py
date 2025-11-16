@@ -17,13 +17,10 @@ from typing import List, Dict, Optional
 HISTORICAL_DIR = os.path.join("data", "historical")
 LIVE_DIR = os.path.join("data", "live")
 
-# 지원 타임프레임과 초 단위 매핑
+# 지원 타임프레임과 초 단위 매핑 (5m, 15m만 지원)
 TIMEFRAME_TO_SECONDS = {
     "5m": 5 * 60,
     "15m": 15 * 60,
-    "1h": 60 * 60,
-    "4h": 4 * 60 * 60,
-    "1d": 24 * 60 * 60,
 }
 
 class HistoricalLoader:

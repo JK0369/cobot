@@ -106,9 +106,7 @@ class Calculator:
         tf_candles 예:
         {
             "5m": [...],
-            "15m": [...],
-            "1h": [...],
-            ...
+            "15m": [...]
         }
         """
         if not self.method_funcs:
