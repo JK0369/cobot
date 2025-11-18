@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Dict, List
 from core.calculator import Calculator
 from core.loader import HistoricalLoader, LiveLoader, get_multi_timeframe_candles
@@ -34,9 +35,15 @@ def get_tf_candles(symbol: str, historical: HistoricalLoader, live: LiveLoader, 
     )
 
 def run_once() -> Dict:
-    calc = Calculator("config/settings.json", "methods")
-    historical = HistoricalLoader()
-    live = LiveLoader()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    settings_path = os.path.join(base_dir, "config", "settings.json")
+    methods_path = os.path.join(base_dir, "methods")
+    historical_dir = os.path.join(base_dir, "data", "historical")
+    live_dir = os.path.join(base_dir, "data", "live")
+
+    calc = Calculator(settings_path, methods_path)
+    historical = HistoricalLoader(historical_dir)
+    live = LiveLoader(live_dir)
     result: Dict = {}
     for symbol in SYMBOLS:
         tf_candles = get_tf_candles(symbol, historical, live, window=360)  # 5m 기준 360개 ≈ 30시간
