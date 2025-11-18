@@ -19,9 +19,19 @@ from __future__ import annotations
 
 import os
 from typing import Dict, List, Optional, Any
-from .calculator import Calculator
-from .position import decide_action
-from .loader import HistoricalLoader, get_multi_timeframe_candles, TIMEFRAME_TO_SECONDS
+# 패키지로 실행되지 않을 때(파일 직접 실행) 상대 임포트 오류 방지
+try:
+    from .calculator import Calculator
+    from .position import decide_action
+    from .loader import HistoricalLoader, get_multi_timeframe_candles, TIMEFRAME_TO_SECONDS
+except ImportError:
+    # project/core/backtester.py를 직접 실행하는 경우를 위한 폴백
+    import os as _os
+    import sys as _sys
+    _sys.path.append(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    from core.calculator import Calculator  # type: ignore
+    from core.position import decide_action  # type: ignore
+    from core.loader import HistoricalLoader, get_multi_timeframe_candles, TIMEFRAME_TO_SECONDS  # type: ignore
 
 class Backtester:
     def __init__(self, settings_path: str = "config/settings.json", methods_path: str = "methods", historical_dir: str = "data/historical"):
@@ -137,3 +147,18 @@ class Backtester:
         return max_dd * 100  # 퍼센트 반환
 
 __all__ = ["Backtester"]
+
+# 파일을 직접 실행하는 편의 실행기
+if __name__ == "__main__":
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Run historical backtest (direct core/backtester.py)")
+    parser.add_argument("--symbols", type=str, default="BTC,ETH", help="Comma separated symbols")
+    parser.add_argument("--limit", type=int, default=500, help="Max candles per symbol")
+    args = parser.parse_args()
+
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    bt = Backtester()
+    result = bt.run(symbols, limit=args.limit)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
